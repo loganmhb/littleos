@@ -15,5 +15,7 @@ int kmain() {
     fb_write_cell(i, hello[i], FB_GREEN, 0);
     i++;
   }
+
+  fb_move_cursor(80);
   return deadbeef();
 }
