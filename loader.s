@@ -23,6 +23,7 @@ loader:
     mov esp, kernel_stack + KERNEL_STACK_SIZE ; point esp to the start of the stack,
                                               ; which is at the end of the memory area
     call kmain
+    mov dword [0x000B8000], 0x2841
 
 .loop:
     jmp .loop
