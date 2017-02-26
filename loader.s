@@ -17,9 +17,12 @@ align 4
     dd FLAGS
     dd CHECKSUM
 
+extern kmain 
+
 loader:
     mov esp, kernel_stack + KERNEL_STACK_SIZE ; point esp to the start of the stack,
-    mov eax, 0xCAFEBABE ; which is at the end of the memory area
+                                              ; which is at the end of the memory area
+    call kmain
 
 .loop:
     jmp .loop
