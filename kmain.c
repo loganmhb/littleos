@@ -9,13 +9,9 @@ int kmain() {
   for (int i = 0; i < FB_LENGTH; i++) {
     fb_write_cell(i, 'A', 0, 0);
   }
-  char *hello = "Hello, world!";
-  int i = 0;
-  while (hello[i] != 0) {
-    fb_write_cell(i, hello[i], FB_GREEN, 0);
-    i++;
+  for(int i = 0; i < 10000; i++) {
+    fb_write("abcdefghijklmnop");
+    if (i % 5 == 0) fb_write("\n");
   }
-
-  fb_move_cursor(80);
   return deadbeef();
 }
