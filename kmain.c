@@ -9,9 +9,6 @@ int kmain() {
   for (int i = 0; i < FB_LENGTH; i++) {
     fb_write_cell(i, 'A', 0, 0);
   }
-  for(int i = 0; i < 10000; i++) {
-    fb_write("abcdefghijklmnop");
-    if (i % 5 == 0) fb_write("\n");
-  }
+  fb_write("\n\nHello, world!\n\n");
   return deadbeef();
 }
