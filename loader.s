@@ -65,11 +65,7 @@ dictionary_end:                           ; Initialize the empty dictionary
 %define link dictionary_end
 
 cold_start:
-    dd lit
-    dd 0x41
-    dd lit
-    dd 0x0
-    dd fbwritecell
+    dd wrd
     dd quit
 
 ;; DEFCODE - macro for defining Forth words implemented in assembly
@@ -227,6 +223,18 @@ global %3
 
 ;; Comparison primitives
 
+;; Control flow (conditional and unconditional branches)
+    defcode "branch",6,branch
+    add esi, [esi]
+    next
+
+    defcode "0branch",7,zbranch
+    pop eax
+    test eax, eax
+    jz code_branch
+    lodsd
+    next
+
 ;; Internal control flow stuff
     defcode "exit",4,exit
     poprsp esi
@@ -235,3 +243,56 @@ global %3
     defcode "quit",4,quit
     pop eax
     jmp loop
+
+;; Since we have no stdin, key will start reading from an arbitrary buffer.
+    defcode "key",3,key
+    call _key
+    push eax
+    next
+
+_key:
+;; TODO: track when out of input and fetch more
+    mov ebx, [currkey]
+    xor eax, eax
+    mov al, [ebx]
+    inc ebx
+    mov [currkey], ebx
+    ret
+
+section .data
+currkey:
+    dd input_buffer
+input_buffer:
+    dw 'dup + '
+
+    defcode "word",4,wrd
+    call _wrd
+    push edi                    ; base address
+    push ecx                    ; length
+    next
+
+_wrd:
+;; First, skip blank characters.
+.skipblanks:
+    call _key
+    cmp al, ' '
+    jbe .skipblanks
+    mov edi, wordbuffer
+.findend:
+    stosb
+    call _key
+    cmp al, ' '
+    ja .findend
+
+    sub edi, wordbuffer
+    mov ecx, edi
+    mov edi, wordbuffer
+    ret
+
+
+section .data
+blank:
+    dw ' '
+
+wordbuffer:
+    resb 32
