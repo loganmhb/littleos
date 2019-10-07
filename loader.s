@@ -6,6 +6,8 @@ FLAGS equ 0x0
 CHECKSUM equ -MAGIC_NUMBER
 PARAMETER_STACK_SIZE equ 4096
 RETURN_STACK_SIZE equ 4096
+FRAMEBUF_LOC equ 0x000B8000
+FRAMEBUF_MAX equ 80 * 25
 
 section .bss
 align 4
@@ -31,7 +33,7 @@ align 4
 ;; Push and pop for the return stack
 %macro pushrsp 1
     lea ebp, [ebp - 4]
-    mov ebp, %1
+    mov [ebp], %1
 %endmacro
 
 %macro poprsp 1
@@ -42,7 +44,6 @@ align 4
 loader:
     mov esp, parameter_stack + PARAMETER_STACK_SIZE
     mov ebp, return_stack + RETURN_STACK_SIZE
-    mov eax, 0xDEADBEEF
     mov esi, cold_start         ; Initialize the interpreter
     next
 
@@ -64,6 +65,12 @@ dictionary_end:                           ; Initialize the empty dictionary
 %define link dictionary_end
 
 cold_start:
+    dd lit
+    dd 0xDEADBEEF
+    dd pushr
+    dd lit
+    dd 0xCAFEBABE
+    dd popr
     dd quit
 
 ;; DEFCODE - macro for defining Forth words implemented in assembly
@@ -97,6 +104,129 @@ code_%3:
 ;; (asm implementation follows macro invocation)
     %endmacro
 
+    ;; lit reads a literal value onto the stack. It works by first
+    ;; reading the value into eax and advancing the stack pointer
+    ;; (conveniently one instruction) and then pushing eax onto the
+    ;; stack.
+    defcode "lit",3,lit
+    lodsd
+    push eax
+    next
+
+    ;; Stack manipulation primitives
+    defcode "drop",4,drop
+    pop eax
+    next
+
+    defcode "dup",3,dup
+    mov eax, [esp]
+    push eax
+    next
+
+    defcode "swap",4,swap
+    pop eax
+    pop ebx
+    push eax
+    push ebx
+    next
+
+    defcode "rot",3,rot
+    pop eax
+    pop ebx
+    pop ecx
+    push ebx
+    push eax
+    push ecx
+    next
+
+    defcode "over",4,over
+    mov eax, [esp + 4]
+    push eax
+    next
+
+;; Arithmetic primitives
+    defcode "+",1,plus
+    pop eax
+    add [esp], eax
+    next
+
+    defcode "*",1,multiply
+    pop eax
+    pop ebx
+    imul eax, ebx
+    push eax
+    next
+
+;; Return stack manipulation
+    defcode ">r",2,pushr
+    pop eax
+    pushrsp eax
+    next
+
+    defcode "<r",2,popr
+    poprsp eax
+    push eax
+    next
+
+;; Memory manipulation
+    defcode "!",1,store
+    pop ebx
+    pop eax
+    mov [ebx], eax
+    next
+
+    defcode "@",1,fetch
+    pop ebx
+    mov eax, [ebx]
+    push eax
+    next
+
+    defcode "C!",2,storebyte
+    pop ebx
+    pop eax
+    mov [ebx], al
+    next
+
+    defcode "C@",2,fetchbyte
+    pop ebx
+    xor eax, eax
+    mov al, [ebx]
+    push eax
+    next
+
+;; Write to the framebuffer
+%macro defword 3-4 0
+section .rodata
+align 4
+global name_%3
+name_%3:
+    dd link
+%define link name_%3
+    db %4+%2
+    dw %1
+align 4
+global %3
+%3:
+    dd docol
+%endmacro
+
+    ;; ( char cell )
+    defword "fb-write-cell",13,fbwritecell
+    dd lit
+    dd 16                       ; framebuf cell size
+    dd multiply
+    dd lit
+    dd FRAMEBUF_LOC
+    dd plus
+    dd exit
+
+;; Comparison primitives
+
+;; Internal control flow stuff
+    defcode "exit",4,exit
+    poprsp esi
+    next
+
     defcode "quit",4,quit
-    mov eax, 0xDEADBEEF
+    pop eax
     jmp loop
