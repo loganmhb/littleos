@@ -65,8 +65,16 @@ dictionary_end:                           ; Initialize the empty dictionary
 %define link dictionary_end
 
 cold_start:
-    dd wrd
+    dd lit
+    dd 4
+    dd lit
+    dd 2
+    dd interpret
     dd quit
+
+    F_IMMED equ 0x80
+    F_HIDDEN equ 0x20
+    F_LENMASK equ 0x1F
 
 ;; DEFCODE - macro for defining Forth words implemented in assembly
 ;;
@@ -85,7 +93,7 @@ global %3_label
     dd link
 %define link %3_label
     db %4+%2
-    dd %1
+    db %1
     align 4
 
 global %3
@@ -210,17 +218,6 @@ global %3
     dd plus
     dd exit
 
-    ;; ( char cell )
-    defword "fb-write-cell",13,fbwritecell
-    dd lit
-    dd 16                       ; framebuf cell size
-    dd multiply
-    dd lit
-    dd FRAMEBUF_LOC
-    dd plus
-    dd storebyte
-    dd exit
-
 ;; Comparison primitives
 
 ;; Control flow (conditional and unconditional branches)
@@ -259,7 +256,7 @@ section .data
 currkey:
     dd input_buffer
 input_buffer:
-    dw 'dup + '
+    dw '+ '
 
     defcode "word",4,wrd
     call _wrd
@@ -290,6 +287,15 @@ section .bss
 wordbuffer:
     resb 32
 
+    defcode "number",6,number
+    call _number
+    push eax
+    next
+
+_number:
+    ;; todo implement for real
+    push 2
+
 %macro defvar 3-5 0, 0
     defcode %1, %2, %3, %4
     push var_%3
@@ -301,9 +307,9 @@ var_%3:
     dd %5
 %endmacro
 
-    defvar "latest",6,latest,0,name_fbwritecell ; dictionary start (assumes quit is last word)
+    defvar "latest",6,latest,0,name_fbwritecell ; dictionary start
     defvar "here",4,here                 ; next available memory
-    defvar "state",5,state               ; compiling?
+    defvar "state",5,state,0,0             ; compiling?
     defvar "s0",2,sz                     ; top of param stack
     defvar "base",4,base                 ; base of param stack
 
@@ -317,7 +323,7 @@ var_%3:
 
 _find:
     push esi
-    mov edx, var_latest
+    mov edx, [var_latest]
 .checkentry:
     test edx, edx               ; nul pointer?
     je .notfound
@@ -359,8 +365,8 @@ _find:
 
 _tcfa:
     xor eax, eax
-    add edi, 4
-    mov al, [edi]
+    add edi, 4                  ; skip link
+    mov al, [edi]               ; load length byte
     inc edi
     and al, F_LENMASK
     add edi, eax
@@ -368,8 +374,166 @@ _tcfa:
     and edi, ~3
     ret
 
+    ;; Create a dictionary header for a word
+    defcode "create",6,create
+    pop ecx                     ; length of name
+    pop ebx                     ; address of name
+
+    mov edi, var_here
+    mov eax, var_latest
+    stosd
+
+    mov al, cl
+    stosb
+    push esi
+    mov esi, ebx
+    rep movsb
+    pop esi
+    add edi, 3
+    and edi, ~3
+    mov eax, var_here
+    mov [var_latest], eax
+    mov [var_here], edi
+    next
+
+    defcode ",",1,comma
+    pop eax
+    call _comma
+    next
+
+_comma:
+    mov edi, var_here
+    stosd
+    mov [var_here], edi
+    ret
+
+    defcode "[",1,lbrac,F_IMMED
+    xor eax, eax
+    mov [var_state], eax
+    next
+
+    defcode "]",1,rbrac
+    mov [var_state], dword 1
+    next
+
+    defword ":",1,colon
+    dd wrd
+    dd create
+    dd lit
+    dd docol
+    dd comma
+    dd latest
+    dd fetch
+    dd hidden
+    dd rbrac
+    dd exit
+
+    defword ";",1,semicolon
+    dd lit
+    dd exit
+    dd comma
+    dd latest
+    dd fetch
+    dd hidden
+    dd lbrac
+    dd exit
+
+    defcode "immediate",9,immediate
+    mov edi, var_latest
+    add edi, 4
+    xor [edi], dword F_IMMED
+    next
+
+    defcode "hidden",6,hidden
+    pop edi
+    add edi, 4
+    xor [edi], dword F_HIDDEN
+    next
+
+    defword "hide",4,hide
+    dd wrd
+    dd find
+    dd hidden
+    dd exit
+
+    defcode "interpret",9,interpret
+    call _wrd
+
+    xor eax, eax
+    mov [interpret_is_lit], eax
+    call _find
+    test eax, eax
+
+    jz .notfound
+
+    mov edi, eax
+    mov al, [edi + 4]
+    push ax
+    call _tcfa
+    pop ax
+    and al, F_IMMED
+    mov eax, edi
+    jnz .execute
+
+    jmp .compileorexecute
+
+.notfound:
+    inc dword [interpret_is_lit]        ; assume it's a number
+    call _number
+    test ecx, ecx
+    jnz .error
+    mov ebx, eax
+    mov eax, lit
+
+.compileorexecute:
+    mov edx, [var_state]
+    test edx, edx
+    jz .execute
+
+    call _comma
+    mov ecx, interpret_is_lit
+    test ecx, ecx
+    jz .next
+    mov eax, ebx                ; append literal number
+    call _comma
+
+.next:
+    next
+
+.execute:
+    mov ecx, [interpret_is_lit]
+    test ecx, ecx
+    jnz .executelit
+
+    ;; this doesn't return, but the codeword will call next which will re-enter the loop
+    jmp [eax]
+
+.executelit:
+    push ebx
+    next
+
+.error:
+    ;; todo
+    next
+
+section .data
+align 4
+interpret_is_lit:
+    dd 0
+
 ;; TODO: implement `number` to read a numeric literal
 
     defcode "quit",4,quit
     pop eax
     jmp loop
+    ;; ( char cell )
+
+    defword "fb-write-cell",13,fbwritecell
+    dd lit
+    dd 16                       ; framebuf cell size
+    dd multiply
+    dd lit
+    dd FRAMEBUF_LOC
+    dd plus
+    dd storebyte
+    dd exit
