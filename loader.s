@@ -240,10 +240,6 @@ global %3
     poprsp esi
     next
 
-    defcode "quit",4,quit
-    pop eax
-    jmp loop
-
 ;; Since we have no stdin, key will start reading from an arbitrary buffer.
     defcode "key",3,key
     call _key
@@ -272,7 +268,6 @@ input_buffer:
     next
 
 _wrd:
-;; First, skip blank characters.
 .skipblanks:
     call _key
     cmp al, ' '
@@ -284,15 +279,97 @@ _wrd:
     cmp al, ' '
     ja .findend
 
+    ;; Return word length in ecx, start in edi
     sub edi, wordbuffer
     mov ecx, edi
     mov edi, wordbuffer
     ret
 
-
-section .data
-blank:
-    dw ' '
+section .bss
 
 wordbuffer:
     resb 32
+
+%macro defvar 3-5 0, 0
+    defcode %1, %2, %3, %4
+    push var_%3
+    next
+
+section .data
+align 4
+var_%3:
+    dd %5
+%endmacro
+
+    defvar "latest",6,latest,0,name_fbwritecell ; dictionary start (assumes quit is last word)
+    defvar "here",4,here                 ; next available memory
+    defvar "state",5,state               ; compiling?
+    defvar "s0",2,sz                     ; top of param stack
+    defvar "base",4,base                 ; base of param stack
+
+;; Find a word in the dictionary
+    defcode "find",4,find
+    pop ecx                     ; length
+    pop edi                     ; address
+    call _find
+    push eax                    ; address of dictionary entry, or NUL
+    next
+
+_find:
+    push esi
+    mov edx, var_latest
+.checkentry:
+    test edx, edx               ; nul pointer?
+    je .notfound
+
+    xor eax, eax
+    mov al, [edx + 4]           ; al = flags + length field
+    and al, F_HIDDEN | F_LENMASK
+    cmp al, cl
+    jne .nextword
+
+;; The length is correct, so compare the strings in detail.
+    push ecx
+    push edi
+    lea esi, [edx + 5]
+    repe cmpsb
+    pop edi
+    pop ecx
+    jne .nextword
+
+;; Found it!
+    pop esi
+    mov eax, edx
+    ret
+
+.nextword:
+    mov edx, [edx]
+    jmp .checkentry
+
+.notfound:
+    pop esi
+    xor eax, eax
+    ret
+
+    defcode ">cfa",4,tcfa
+    pop edi
+    call _tcfa
+    push edi
+    next
+
+_tcfa:
+    xor eax, eax
+    add edi, 4
+    mov al, [edi]
+    inc edi
+    and al, F_LENMASK
+    add edi, eax
+    add edi, 3
+    and edi, ~3
+    ret
+
+;; TODO: implement `number` to read a numeric literal
+
+    defcode "quit",4,quit
+    pop eax
+    jmp loop
