@@ -66,11 +66,10 @@ dictionary_end:                           ; Initialize the empty dictionary
 
 cold_start:
     dd lit
-    dd 0xDEADBEEF
-    dd pushr
+    dd 0x41
     dd lit
-    dd 0xCAFEBABE
-    dd popr
+    dd 0x0
+    dd fbwritecell
     dd quit
 
 ;; DEFCODE - macro for defining Forth words implemented in assembly
@@ -210,6 +209,11 @@ global %3
     dd docol
 %endmacro
 
+    defword "times2",6,timestwo
+    dd dup
+    dd plus
+    dd exit
+
     ;; ( char cell )
     defword "fb-write-cell",13,fbwritecell
     dd lit
@@ -218,6 +222,7 @@ global %3
     dd lit
     dd FRAMEBUF_LOC
     dd plus
+    dd storebyte
     dd exit
 
 ;; Comparison primitives
