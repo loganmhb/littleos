@@ -64,17 +64,20 @@ dictionary_end:                           ; Initialize the empty dictionary
 
 %define link dictionary_end
 
+    F_IMMED equ 0x80
+    F_HIDDEN equ 0x20
+    F_LENMASK equ 0x1F
+
 cold_start:
+    dd lit
+    dd 3
+    dd lit
+    dd 5
     dd lit
     dd 4
     dd lit
     dd 2
-    dd interpret
     dd quit
-
-    F_IMMED equ 0x80
-    F_HIDDEN equ 0x20
-    F_LENMASK equ 0x1F
 
 ;; DEFCODE - macro for defining Forth words implemented in assembly
 ;;
@@ -171,6 +174,18 @@ code_%3:
     push eax
     next
 
+    defcode "rsp@",4,rspfetch
+    push ebp
+    next
+
+    defcode "rsp!",4,rspstore
+    pop ebp
+    next
+
+    defcode "rdrop",5,rdrop
+    add ebp, 4                  ; throw away the value
+    next
+
 ;; Memory manipulation
     defcode "!",1,store
     pop ebx
@@ -213,11 +228,6 @@ global %3
     dd docol
 %endmacro
 
-    defword "times2",6,timestwo
-    dd dup
-    dd plus
-    dd exit
-
 ;; Comparison primitives
 
 ;; Control flow (conditional and unconditional branches)
@@ -256,7 +266,7 @@ section .data
 currkey:
     dd input_buffer
 input_buffer:
-    dw '+ '
+    dw '+ + + end '
 
     defcode "word",4,wrd
     call _wrd
@@ -521,13 +531,29 @@ align 4
 interpret_is_lit:
     dd 0
 
+%macro defconst 4-5 0
+    defcode %1, %2, %3, %5
+    push %4
+    next
+%endmacro
+
+    defconst "r0",2,rz,return_stack+RETURN_STACK_SIZE
 ;; TODO: implement `number` to read a numeric literal
 
-    defcode "quit",4,quit
+    defword "quit",4,quit
+    dd rz
+    dd rspstore
+    dd interpret
+    dd branch
+    dd -8
+    dd exit
+
+    defcode "end",3,end
     pop eax
     jmp loop
-    ;; ( char cell )
+    next
 
+    ;; ( char cell )
     defword "fb-write-cell",13,fbwritecell
     dd lit
     dd 16                       ; framebuf cell size
