@@ -270,6 +270,8 @@ currkey:
 _wrd:
 .skipblanks:
     call _key
+    cmp al, 0x5c                ; backslash
+    je .skipcomment
     cmp al, ' '
     jbe .skipblanks
     mov edi, wordbuffer
@@ -284,6 +286,13 @@ _wrd:
     mov ecx, edi
     mov edi, wordbuffer
     ret
+
+.skipcomment:
+    call _key
+    cmp al, `\n`
+    jne .skipcomment
+    jmp .skipblanks
+
 
 section .bss
 
@@ -595,4 +604,5 @@ input_buffer:
     dw ' : framebuf-start 753664 ; '
     dw ' : fb-write-cell 16 * framebuf-start + c! ; '
     ;; WOOHOO!
+    dw ` \\ Test comment \n `
     dw ' 65 0 fb-write-cell end '
