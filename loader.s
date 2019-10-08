@@ -6,6 +6,7 @@ FLAGS equ 0x0
 CHECKSUM equ -MAGIC_NUMBER
 PARAMETER_STACK_SIZE equ 4096
 RETURN_STACK_SIZE equ 4096
+HEAP_SIZE equ 65535
 FRAMEBUF_LOC equ 0x000B8000
 FRAMEBUF_MAX equ 80 * 25
 
@@ -18,6 +19,8 @@ parameter_stack:
 return_stack:
     resb RETURN_STACK_SIZE
 
+heap:
+    resb HEAP_SIZE
 
 section .text
 align 4
@@ -69,14 +72,6 @@ dictionary_end:                           ; Initialize the empty dictionary
     F_LENMASK equ 0x1F
 
 cold_start:
-    dd lit
-    dd 3
-    dd lit
-    dd 5
-    dd lit
-    dd 4
-    dd lit
-    dd 2
     dd quit
 
 ;; DEFCODE - macro for defining Forth words implemented in assembly
@@ -199,13 +194,13 @@ code_%3:
     push eax
     next
 
-    defcode "C!",2,storebyte
+    defcode "c!",2,storebyte
     pop ebx
     pop eax
     mov [ebx], al
     next
 
-    defcode "C@",2,fetchbyte
+    defcode "c@",2,fetchbyte
     pop ebx
     xor eax, eax
     mov al, [ebx]
@@ -265,8 +260,6 @@ _key:
 section .data
 currkey:
     dd input_buffer
-input_buffer:
-    dw '+ + + end '
 
     defcode "word",4,wrd
     call _wrd
@@ -303,8 +296,57 @@ wordbuffer:
     next
 
 _number:
-    ;; todo implement for real
-    push 2
+    xor eax, eax
+    xor ebx, ebx
+    test ecx, ecx               ; parsing a zero-length string is an
+                                ; error and returns zero
+    jz .error
+
+    ;; Check for initial '-'
+    mov edx, [var_base]
+    mov bl, [edi]               ; set bl to first character
+    inc edi
+    push eax
+    cmp bl, byte '-'
+    jnz .convert
+    pop eax
+    push ebx                    ; non-zero on stack indicates negative
+    dec ecx
+    jnz .readdigits
+;; error case: string is only '-'
+    mov ecx, 1
+    ret
+
+.readdigits:
+    imul eax, edx               ; eax *= base
+    mov bl, [edi]
+    inc edi
+
+.convert:
+    sub bl, byte '0'            ; < '0'?
+    jb .negate
+    cmp bl, 10                  ; <= '9'?
+    jb .checkbase
+    sub bl, 17
+    jb .negate
+    add bl, 10
+
+.checkbase:
+    cmp bl, dl
+    jge .negate
+
+    add eax, ebx
+    dec ecx
+    jnz .readdigits
+
+.negate:
+    pop ebx
+    test ebx, ebx
+    jz .error
+    neg eax
+
+.error:
+    ret
 
 %macro defvar 3-5 0, 0
     defcode %1, %2, %3, %4
@@ -317,11 +359,11 @@ var_%3:
     dd %5
 %endmacro
 
-    defvar "latest",6,latest,0,name_fbwritecell ; dictionary start
-    defvar "here",4,here                 ; next available memory
-    defvar "state",5,state,0,0             ; compiling?
-    defvar "s0",2,sz                     ; top of param stack
-    defvar "base",4,base                 ; base of param stack
+    defvar "latest",6,latest,0,name_quit        ; latest dict entry
+    defvar "here",4,here,0,heap                 ; next available memory
+    defvar "state",5,state,0,0                  ; compiling?
+    defvar "s0",2,sz                            ; top of param stack
+    defvar "base",4,base,0,10                     ; base for parsing numbers
 
 ;; Find a word in the dictionary
     defcode "find",4,find
@@ -347,7 +389,7 @@ _find:
 ;; The length is correct, so compare the strings in detail.
     push ecx
     push edi
-    lea esi, [edx + 5]
+    lea esi, [edx + 5]          ; load address of string we are comparing to esi
     repe cmpsb
     pop edi
     pop ecx
@@ -389,30 +431,33 @@ _tcfa:
     pop ecx                     ; length of name
     pop ebx                     ; address of name
 
-    mov edi, var_here
-    mov eax, var_latest
-    stosd
+    mov edi, [var_here]         ; point edi at next free memory
+    mov eax, [var_latest]       ; store link in eax
+    stosd                       ; store the word
 
     mov al, cl
-    stosb
+    stosb                       ; store the length
+
     push esi
     mov esi, ebx
-    rep movsb
+    rep movsb                   ; copy the name
     pop esi
-    add edi, 3
+
+    add edi, 3                  ; move edi past the padding
     and edi, ~3
-    mov eax, var_here
+
+    mov eax, [var_here]
     mov [var_latest], eax
     mov [var_here], edi
     next
 
-    defcode ",",1,comma
-    pop eax
+    defcode ",",1,comma         ; copy the top of the stack into next
+    pop eax                     ; available memory
     call _comma
     next
 
 _comma:
-    mov edi, var_here
+    mov edi, [var_here]
     stosd
     mov [var_here], edi
     ret
@@ -427,24 +472,15 @@ _comma:
     next
 
     defword ":",1,colon
-    dd wrd
-    dd create
-    dd lit
-    dd docol
-    dd comma
-    dd latest
-    dd fetch
-    dd hidden
+    dd wrd, create
+    dd lit, docol, comma
+    dd latest, fetch, hidden
     dd rbrac
     dd exit
 
-    defword ";",1,semicolon
-    dd lit
-    dd exit
-    dd comma
-    dd latest
-    dd fetch
-    dd hidden
+    defword ";",1,semicolon,F_IMMED
+    dd lit, exit, comma
+    dd latest, fetch, hidden
     dd lbrac
     dd exit
 
@@ -476,10 +512,10 @@ _comma:
 
     jz .notfound
 
-    mov edi, eax
-    mov al, [edi + 4]
+    mov edi, eax                ; set edi to the dictionary entry address
+    mov al, [edi + 4]           ; get len+flags and save it
     push ax
-    call _tcfa
+    call _tcfa                  ; now edi is set to codeword
     pop ax
     and al, F_IMMED
     mov eax, edi
@@ -501,7 +537,7 @@ _comma:
     jz .execute
 
     call _comma
-    mov ecx, interpret_is_lit
+    mov ecx, [interpret_is_lit]
     test ecx, ecx
     jz .next
     mov eax, ebx                ; append literal number
@@ -540,6 +576,11 @@ interpret_is_lit:
     defconst "r0",2,rz,return_stack+RETURN_STACK_SIZE
 ;; TODO: implement `number` to read a numeric literal
 
+    defcode "end",3,end
+    pop eax
+    jmp loop
+    next
+
     defword "quit",4,quit
     dd rz
     dd rspstore
@@ -548,18 +589,10 @@ interpret_is_lit:
     dd -8
     dd exit
 
-    defcode "end",3,end
-    pop eax
-    jmp loop
-    next
-
-    ;; ( char cell )
-    defword "fb-write-cell",13,fbwritecell
-    dd lit
-    dd 16                       ; framebuf cell size
-    dd multiply
-    dd lit
-    dd FRAMEBUF_LOC
-    dd plus
-    dd storebyte
-    dd exit
+section .data
+input_buffer:
+;; TODO: implement comment parsing
+    dw ' : framebuf-start 753664 ; '
+    dw ' : fb-write-cell 16 * framebuf-start + c! ; '
+    ;; WOOHOO!
+    dw ' 65 0 fb-write-cell end '
