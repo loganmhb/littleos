@@ -258,8 +258,9 @@ _key:
     ret
 
 section .data
+    extern _binary_kernel_f_start
 currkey:
-    dd input_buffer
+    dd _binary_kernel_f_start
 
     defcode "word",4,wrd
     call _wrd
@@ -597,12 +598,3 @@ interpret_is_lit:
     dd branch
     dd -8
     dd exit
-
-section .data
-input_buffer:
-;; TODO: implement comment parsing
-    dw ' : framebuf-start 753664 ; '
-    dw ' : fb-write-cell 16 * framebuf-start + c! ; '
-    ;; WOOHOO!
-    dw ` \\ Test comment \n `
-    dw ' 65 0 fb-write-cell end '

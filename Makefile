@@ -1,4 +1,4 @@
-OBJECTS = loader.o
+OBJECTS = loader.o kernel.o
 CC = gcc
 CFLAGS = -m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector \
 		 -nostartfiles -nodefaultlibs -Wall -Wextra -Werror -c
@@ -16,6 +16,9 @@ os.iso: kernel.elf
 
 kernel.elf: $(OBJECTS)
 	ld $(LDFLAGS) $(OBJECTS) -o kernel.elf
+
+%.o: %.f
+	objcopy --input binary --output elf32-i386 --binary-architecture i386 $< $@
 
 %.o: %.s
 	$(AS) $(ASFLAGS) $< -o $@
