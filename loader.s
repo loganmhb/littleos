@@ -151,6 +151,11 @@ code_%3:
     add [esp], eax
     next
 
+    defcode "-",1,minus
+    pop eax
+    sub [esp], eax
+    next
+
     defcode "*",1,multiply
     pop eax
     pop ebx
@@ -224,6 +229,32 @@ global %3
 %endmacro
 
 ;; Comparison primitives
+    defcode "=",1,equals
+    pop eax
+    pop ebx
+    cmp eax, ebx
+    sete al
+    movzx eax, al
+    push eax
+    next
+
+    defcode ">",1,gt
+    pop eax
+    pop ebx
+    cmp ebx, eax
+    setg al
+    movzx eax, al
+    push eax
+    next
+
+    defcode "<",1,lt
+    pop eax
+    pop ebx
+    cmp ebx, eax
+    setl al
+    movzx eax, al
+    push eax
+    next
 
 ;; Control flow (conditional and unconditional branches)
     defcode "branch",6,branch
@@ -494,16 +525,21 @@ _comma:
     dd lbrac
     dd exit
 
-    defcode "immediate",9,immediate
-    mov edi, var_latest
+    defcode "'",1,tick
+    lodsd
+    push eax
+    next
+
+    defcode "immediate",9,immediate,F_IMMED
+    mov edi, [var_latest]
     add edi, 4
-    xor [edi], dword F_IMMED
+    xor [edi], byte F_IMMED
     next
 
     defcode "hidden",6,hidden
     pop edi
     add edi, 4
-    xor [edi], dword F_HIDDEN
+    xor [edi], byte F_HIDDEN
     next
 
     defword "hide",4,hide
@@ -584,6 +620,14 @@ interpret_is_lit:
 %endmacro
 
     defconst "r0",2,rz,return_stack+RETURN_STACK_SIZE
+
+    defcode "char",4,char
+    call _wrd
+    xor eax, eax
+    mov al, [edi]
+    push eax
+    next
+
 ;; TODO: implement `number` to read a numeric literal
 
     defcode "end",3,end
