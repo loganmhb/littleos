@@ -33,17 +33,40 @@
   here @ -        \ calculate offset from value stored by `begin`
   , ;
 
+: again immediate \ infinite loop, break via `exit`
+  ' branch ,
+  here @ -
+  , ;
+
+\ begin <condition> while <body> repeat
+: while immediate
+  ' 0branch ,
+  here @
+  0 , ;
+
+: repeat immediate
+  ' branch ,
+  swap
+  here @ - ,
+  dup
+  here @ swap -
+  swap ! ;
+
 : framebuf-size 80 25 * ;
 
 : framebuf-start 753664 ;
 
 : fb-write-cell 2 * framebuf-start + c! ;
 
+: fb-clear-cell
+  0 swap
+  2 * framebuf-start + 1 +
+  c! ;
+
 : clear-screen
   0                 \ start index
   begin
-  dup 97 swap   \ idx 'a' idx
-  fb-write-cell
+  dup fb-clear-cell
   1 +
   dup framebuf-size =
   until ;

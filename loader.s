@@ -628,6 +628,16 @@ interpret_is_lit:
     push eax
     next
 
+    defcode "litstring",9,litstring
+    lodsd
+    push esi
+    push eax
+    add esi, eax
+    add esi, 3
+    and esi, -3
+    next
+
+
 ;; TODO: implement `number` to read a numeric literal
 
     defcode "end",3,end
