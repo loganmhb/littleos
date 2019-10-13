@@ -40,12 +40,13 @@
 : fb-write-cell 2 * framebuf-start + c! ;
 
 : clear-screen
-  0
+  0                 \ start index
   begin
-  dup char a swap
+  dup 97 swap   \ idx 'a' idx
   fb-write-cell
   1 +
-  dup framebuf-size >
+  dup framebuf-size =
   until ;
+
 clear-screen
 end
